@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, Search, Printer, Upload, Layout, ChevronDown, RefreshCcw, X } from 'lucide-react';
+import { MapPin, Search, Printer, Upload, Layout, ChevronDown, RefreshCcw, X, Settings } from 'lucide-react';
 import { fetchHijriCalendarByCity, type PrayerData } from './logic/api';
+import { fetchVaktijaByCity } from './logic/vaktija';
 import { guessLocation, guessCityCountry } from './logic/geo';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,12 +18,52 @@ function App() {
   const [logo, setLogo] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [method, setMethod] = useState<number>(3); // Default to MWL
   const tableRef = useRef<HTMLDivElement>(null);
+
+  const CALCULATION_METHODS = [
+    { id: 99, name: 'Takvim IZ u BiH (Vaktija.ba)' },
+    { id: 13, name: 'Diyanet (Turska) - Preporučeno za Balkan' },
+    { id: 3, name: 'Muslim World League (Standard)' },
+    { id: 2, name: 'ISNA (Sjeverna Amerika)' },
+    { id: 4, name: 'Umm Al-Qura (Makkah)' },
+    { id: 5, name: 'Egyptian General Authority' },
+    { id: 12, name: 'Union Organization islamic de France' },
+    { id: 14, name: 'Spiritual Administration of Muslims of Russia' },
+    { id: 15, name: 'Moonsighting Committee' },
+  ];
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
     handleAutoDetect();
   }, []);
+
+  // Determine default method based on country
+  const getMethodForCountry = (country: string): number => {
+    const c = country.toLowerCase();
+
+    // Balkan / Bosnia Region (Method 99 -> Custom Adjustments)
+    if (c.includes('bosnia') || c.includes('herzegovina') || c.includes('serbia') ||
+      c.includes('croatia') || c.includes('montenegro') || c.includes('macedonia') ||
+      c.includes('kosovo') || c.includes('slovenia') || c.includes('albania')) {
+      return 99; // Takvim IZ u BiH (Adjusted)
+    }
+
+    // Specific Countries
+    if (c.includes('turkey') || c.includes('türkiye')) return 13; // Diyanet
+    if (c.includes('united states') || c.includes('canada') || c.includes('usa')) return 2; // ISNA
+    if (c.includes('egypt')) return 5; // Egyptian General Authority
+    if (c.includes('france')) return 12; // UOIF
+    if (c.includes('russia')) return 14; // SAMR
+    if (c.includes('saudi') || c.includes('arabia')) return 4; // Umm Al-Qura
+    if (c.includes('qatar')) return 10;
+    if (c.includes('kuwait')) return 9;
+    if (c.includes('singapore')) return 11;
+    if (c.includes('iran')) return 7;
+
+    // Default for Europe/Others
+    return 3; // Muslim World League
+  };
 
   const handleAutoDetect = async () => {
     setLoading(true);
@@ -31,7 +72,9 @@ function App() {
       const loc = await guessLocation();
       if (loc) {
         setLocation({ city: loc.city, country: loc.country });
-        fetchVaktija(loc.city, loc.country);
+        const detectedMethod = getMethodForCountry(loc.country);
+        setMethod(detectedMethod);
+        fetchVaktija(loc.city, loc.country, detectedMethod);
       }
     } catch (err) {
       setError('Neuspješna automatska detekcija lokacije.');
@@ -48,7 +91,13 @@ function App() {
       const res = await guessCityCountry(searchQuery);
       if (res) {
         setLocation({ city: res.city, country: res.country });
-        fetchVaktija(res.city, res.country);
+        // Automatically switch method based on searched country
+        // But only if user hasn't manually selected (?) 
+        // For now, let's always switch to the best method for that country
+        // as it provides better UX for cross-country searches.
+        const detectedMethod = getMethodForCountry(res.country);
+        setMethod(detectedMethod);
+        fetchVaktija(res.city, res.country, detectedMethod);
       } else {
         setError('Grad nije pronađen.');
       }
@@ -59,13 +108,18 @@ function App() {
     }
   };
 
-  const fetchVaktija = async (city: string, country: string) => {
+  const fetchVaktija = async (city: string, country: string, selectedMethod: number = method) => {
     setLoading(true);
     try {
+      const fetchFn = selectedMethod === 99
+        ? (year: number, month: number) => fetchVaktijaByCity(city, country, year, month)
+        : (year: number, month: number) => fetchHijriCalendarByCity({ city, country, year, month, method: selectedMethod });
+
       const [ramadanData, shawwalData] = await Promise.all([
-        fetchHijriCalendarByCity({ city, country, year: 1447, month: 9 }),
-        fetchHijriCalendarByCity({ city, country, year: 1447, month: 10 }),
+        fetchFn(1447, 9),
+        fetchFn(1447, 10),
       ]);
+
       // API's Hijri calculation starts 1 day early for Ramadan 1447
       // Ramadan 1 is Feb 19, 2026 — skip the first day (Feb 18)
       // and add 1 day from Shawwal to complete 30 days
@@ -187,6 +241,28 @@ function App() {
                 <Button variant="ghost" size="sm" onClick={handleAutoDetect} disabled={loading} className="text-muted-foreground hover:text-foreground">
                   <MapPin size={14} className="mr-2" /> Moja lokacija
                 </Button>
+                <div className="pt-4 border-t">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 block">
+                    <Settings size={12} className="inline mr-1" /> Metoda računanja
+                  </label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={method}
+                    onChange={(e) => {
+                      const newMethod = Number(e.target.value);
+                      setMethod(newMethod);
+                      if (location.city) {
+                        fetchVaktija(location.city, location.country, newMethod);
+                      }
+                    }}
+                  >
+                    {CALCULATION_METHODS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </CardContent>
             </Card>
 
@@ -217,117 +293,124 @@ function App() {
             </Card>
           </div>
         </section>
-      )}
+      )
+      }
 
-      {error && (
-        <div className="mx-6 my-4 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-center no-print">
-          {error}
-        </div>
-      )}
+      {
+        error && (
+          <div className="mx-6 my-4 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-center no-print">
+            {error}
+          </div>
+        )
+      }
 
       {/* Main Vaktija Area */}
-      {data.length > 0 && (
-        <div ref={tableRef} className="vaktija-container flex-1">
-          <div className="mx-auto max-w-4xl m-4 md:m-8 md:mx-auto vaktija-printable-area bg-card shadow-2xl rounded-3xl overflow-hidden border border-border/50 print:bg-white print:shadow-none print:border-none print:m-0 print:rounded-none print:max-w-none">
-            {/* HEADER: Image background + text overlay */}
-            <header className={cn(
-              "vaktija-header overflow-hidden relative",
-              logo ? "h-[220px] md:h-[300px]" : "h-[100px] md:h-[140px]"
-            )}>
-              {/* Background image or dark placeholder */}
-              <div className="vaktija-logo absolute inset-0 z-0">
-                {logo ? (
-                  <img src={logo} alt="Vaktija Header" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-emerald-950" />
-                )}
-              </div>
-              {/* Text overlay - absolutely positioned ON the image */}
-              <div className="vaktija-brand absolute inset-0 z-10 flex flex-col justify-end p-4 md:p-8 bg-gradient-to-t from-black/80 via-black/30 to-transparent">
-                <h2 className="text-xl md:text-4xl font-black italic tracking-tighter text-white drop-shadow-lg">RAMAZANSKA VAKTIJA 1447</h2>
-                <div className="flex items-center gap-1.5 text-amber-400 font-bold tracking-widest text-[10px] md:text-sm uppercase mt-1 drop-shadow-sm">
-                  <MapPin size={14} /> {location.city}, {location.country}
+      {
+        data.length > 0 && (
+          <div ref={tableRef} className="vaktija-container flex-1">
+            <div className="mx-auto max-w-4xl m-4 md:m-8 md:mx-auto vaktija-printable-area bg-card shadow-2xl rounded-3xl overflow-hidden border border-border/50 print:bg-white print:shadow-none print:border-none print:m-0 print:rounded-none print:max-w-none">
+              {/* HEADER: Image background + text overlay */}
+              <header className={cn(
+                "vaktija-header overflow-hidden relative",
+                logo ? "h-[220px] md:h-[300px]" : "h-[100px] md:h-[140px]"
+              )}>
+                {/* Background image or dark placeholder */}
+                <div className="vaktija-logo absolute inset-0 z-0">
+                  {logo ? (
+                    <img src={logo} alt="Vaktija Header" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-emerald-950" />
+                  )}
                 </div>
-              </div>
-            </header>
+                {/* Text overlay - absolutely positioned ON the image */}
+                <div className="vaktija-brand absolute inset-0 z-10 flex flex-col justify-end p-4 md:p-8 bg-gradient-to-t from-black/80 via-black/30 to-transparent">
+                  <h2 className="text-xl md:text-4xl font-black italic tracking-tighter text-white drop-shadow-lg">RAMAZANSKA VAKTIJA 1447</h2>
+                  <div className="flex items-center gap-1.5 text-amber-400 font-bold tracking-widest text-[10px] md:text-sm uppercase mt-1 drop-shadow-sm">
+                    <MapPin size={14} /> {location.city}, {location.country}
+                  </div>
+                </div>
+              </header>
 
-            {/* TABLE: Its own section */}
-            <div className="vaktija-table-wrapper overflow-x-auto relative">
-              {/* Watermark */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 print:opacity-[0.03]">
-                <img src="vahalogo.webp" alt="" className="w-[70%] md:w-[80%] opacity-[0.04] dark:opacity-[0.06]" draggable={false} />
-              </div>
-              <Table className="w-full relative z-10">
-                <TableHeader>
-                  <TableRow className="bg-emerald-900 hover:bg-emerald-900 border-none">
-                    <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">RAM.</TableHead>
-                    <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">DAN</TableHead>
-                    <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">DATUM</TableHead>
-                    <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">ZORA</TableHead>
-                    <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">SUNCE</TableHead>
-                    <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">PODNE</TableHead>
-                    <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">IKINDIJA</TableHead>
-                    <TableHead className="font-black text-amber-300 text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">IFTAR</TableHead>
-                    <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">JACIJA</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.map((day, index) => {
-                    const translations: Record<string, string> = {
-                      'Monday': 'Pon.', 'Tuesday': 'Uto.', 'Wednesday': 'Sri.',
-                      'Thursday': 'Čet.', 'Friday': 'Pet.', 'Saturday': 'Sub.', 'Sunday': 'Ned.',
-                      'February': 'Feb.', 'March': 'Mar.'
-                    };
-                    const dayName = translations[day.date.gregorian.weekday.en] || day.date.gregorian.weekday.en;
-                    const monthName = translations[day.date.gregorian.month.en] || day.date.gregorian.month.en;
-                    const isToday = new Date().toLocaleDateString() === new Date(parseInt(day.date.timestamp) * (day.date.timestamp.length > 10 ? 1 : 1000)).toLocaleDateString();
+              {/* TABLE: Its own section */}
+              <div className="vaktija-table-wrapper overflow-x-auto relative">
+                {/* Watermark */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 print:opacity-[0.03]">
+                  <img src="vahalogo.webp" alt="" className="w-[70%] md:w-[80%] opacity-[0.04] dark:opacity-[0.06]" draggable={false} />
+                </div>
+                <Table className="w-full relative z-10">
+                  <TableHeader>
+                    <TableRow className="bg-emerald-900 hover:bg-emerald-900 border-none">
+                      <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">RAM.</TableHead>
+                      <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">DAN</TableHead>
+                      <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">DATUM</TableHead>
+                      <TableHead className="font-black text-white text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">ZORA</TableHead>
+                      <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">SUNCE</TableHead>
+                      <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">PODNE</TableHead>
+                      <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">IKINDIJA</TableHead>
+                      <TableHead className="font-black text-amber-300 text-center italic text-[10px] md:text-sm px-1 md:px-4 h-8 md:h-10">IFTAR</TableHead>
+                      <TableHead className="font-black text-white text-center italic hidden md:table-cell print:table-cell h-8 md:h-10">JACIJA</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.map((day, index) => {
+                      const translations: Record<string, string> = {
+                        'Monday': 'Pon.', 'Tuesday': 'Uto.', 'Wednesday': 'Sri.',
+                        'Thursday': 'Čet.', 'Friday': 'Pet.', 'Saturday': 'Sub.', 'Sunday': 'Ned.',
+                        'February': 'Feb.', 'March': 'Mar.'
+                      };
+                      const dayName = translations[day.date.gregorian.weekday.en] || day.date.gregorian.weekday.en;
+                      const monthName = translations[day.date.gregorian.month.en] || day.date.gregorian.month.en;
+                      const isToday = new Date().toLocaleDateString() === new Date(parseInt(day.date.timestamp) * (day.date.timestamp.length > 10 ? 1 : 1000)).toLocaleDateString();
 
-                    return (
-                      <TableRow key={index} className={cn(
-                        "hover:bg-muted/50 transition-colors border-border/50 h-7 md:h-auto",
-                        isToday && "bg-primary/10 font-bold"
-                      )}>
-                        <TableCell className="text-center px-0.5 md:px-4 py-0.5 md:py-1">
-                          <span className="inline-flex items-center justify-center w-5 h-5 md:w-7 md:h-7 bg-emerald-700 text-white print:bg-transparent print:text-black rounded-full text-[9px] md:text-[11px] font-black italic">
-                            {index + 1}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center font-medium text-muted-foreground print:text-black text-[10px] md:text-sm px-0.5 md:px-4 py-0.5">{dayName}</TableCell>
-                        <TableCell className="text-center font-medium text-muted-foreground print:text-black text-[10px] md:text-sm px-0.5 md:px-4 py-0.5">{day.date.gregorian.day}. {monthName}</TableCell>
-                        <TableCell className="text-center text-foreground print:text-black font-bold text-[11px] md:text-sm px-0.5 md:px-4 py-0.5">{day.timings.Fajr.split(' ')[0]}</TableCell>
-                        <TableCell className="text-center text-muted-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Sunrise.split(' ')[0]}</TableCell>
-                        <TableCell className="text-center text-muted-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Dhuhr.split(' ')[0]}</TableCell>
-                        <TableCell className="text-center text-muted-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Asr.split(' ')[0]}</TableCell>
-                        <TableCell className="text-center bg-amber-500/5 px-0.5 md:px-4 py-0.5">
-                          <span className="text-amber-600 dark:text-amber-400 print:text-black font-black text-[11px] md:text-base">
-                            {day.timings.Maghrib.split(' ')[0]}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center text-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Isha.split(' ')[0]}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                      return (
+                        <TableRow key={index} className={cn(
+                          "hover:bg-muted/50 transition-colors border-border/50 h-7 md:h-auto",
+                          isToday && "bg-primary/10 font-bold"
+                        )}>
+                          <TableCell className="text-center px-0.5 md:px-4 py-0.5 md:py-1">
+                            <span className="inline-flex items-center justify-center w-5 h-5 md:w-7 md:h-7 bg-emerald-700 text-white print:bg-transparent print:text-black rounded-full text-[9px] md:text-[11px] font-black italic">
+                              {index + 1}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center font-medium text-muted-foreground print:text-black text-[10px] md:text-sm px-0.5 md:px-4 py-0.5">{dayName}</TableCell>
+                          <TableCell className="text-center font-medium text-muted-foreground print:text-black text-[10px] md:text-sm px-0.5 md:px-4 py-0.5">{day.date.gregorian.day}. {monthName}</TableCell>
+                          <TableCell className="text-center text-foreground print:text-black font-bold text-[11px] md:text-sm px-0.5 md:px-4 py-0.5">{day.timings.Fajr.split(' ')[0]}</TableCell>
+                          <TableCell className="text-center text-muted-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Sunrise.split(' ')[0]}</TableCell>
+                          <TableCell className="text-center text-muted-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Dhuhr.split(' ')[0]}</TableCell>
+                          <TableCell className="text-center text-muted-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Asr.split(' ')[0]}</TableCell>
+                          <TableCell className="text-center bg-amber-500/5 px-0.5 md:px-4 py-0.5">
+                            <span className="text-amber-600 dark:text-amber-400 print:text-black font-black text-[11px] md:text-base">
+                              {day.timings.Maghrib.split(' ')[0]}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center text-foreground print:text-black hidden md:table-cell print:table-cell py-0.5">{day.timings.Isha.split(' ')[0]}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* FOOTER: Simple one-line */}
+              <footer className="flex flex-row items-center justify-between px-4 md:px-6 py-3 print:py-1 print:px-2 border-t border-border/30">
+                <div className="text-emerald-700 dark:text-emerald-400 font-black italic text-[10px] md:text-sm tracking-tight uppercase">Ramazan Šerif Mubarek Olsun!</div>
+                <div className="text-[7px] md:text-[9px] font-medium text-muted-foreground tracking-widest uppercase">Generisano putem vaha.net web sajta</div>
+              </footer>
             </div>
-
-            {/* FOOTER: Simple one-line */}
-            <footer className="flex flex-row items-center justify-between px-4 md:px-6 py-3 print:py-1 print:px-2 border-t border-border/30">
-              <div className="text-emerald-700 dark:text-emerald-400 font-black italic text-[10px] md:text-sm tracking-tight uppercase">Ramazan Šerif Mubarek Olsun!</div>
-              <div className="text-[7px] md:text-[9px] font-medium text-muted-foreground tracking-widest uppercase">Generisano putem vaha.net web sajta</div>
-            </footer>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {data.length > 0 && (
-        <div className="flex justify-center pb-20 no-print">
-          <Button size="lg" className="h-14 px-10 rounded-2xl shadow-xl text-lg font-bold italic" onClick={handlePrint}>
-            <Printer className="mr-3" /> SAČUVAJ KAO PDF / ŠTAMPAJ
-          </Button>
-        </div>
-      )}
-    </div>
+      {
+        data.length > 0 && (
+          <div className="flex justify-center pb-20 no-print">
+            <Button size="lg" className="h-14 px-10 rounded-2xl shadow-xl text-lg font-bold italic" onClick={handlePrint}>
+              <Printer className="mr-3" /> SAČUVAJ KAO PDF / ŠTAMPAJ
+            </Button>
+          </div>
+        )
+      }
+    </div >
   );
 }
 
