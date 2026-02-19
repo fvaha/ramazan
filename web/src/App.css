@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  --font-main: 'Outfit', sans-serif;
+}
+
+.font-main {
+  font-family: var(--font-main);
+}
+
+.bg-radial-gradient {
+  background: radial-gradient(circle at top right, rgba(16, 185, 129, 0.15), transparent),
+    radial-gradient(circle at bottom left, rgba(245, 158, 11, 0.08), transparent);
+}
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.7) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Print Styles */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+    /* Standard printer margins often apply anyway, so we start at 0 */
+  }
+
+  html,
+  body {
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    overflow: hidden !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide non-printable elements */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Main Container - Fills the page */
+  .vaktija-container {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Printable Area wrapper */
+  .vaktija-printable-area {
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 5mm !important;
+    /* Some padding from the edge */
+    box-sizing: border-box !important;
+  }
+
+  /* Header */
+  .vaktija-header {
+    width: 100% !important;
+    position: relative;
+    height: auto !important;
+    min-height: 70px !important;
+    max-height: 200px !important;
+    margin-bottom: 0 !important;
+    overflow: hidden;
+    border-radius: 0 !important;
+    flex-shrink: 0;
+    background: #0a2e1f !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .vaktija-logo {
+    position: relative !important;
+    width: 100% !important;
+    z-index: 0;
+    background: #0a2e1f;
+  }
+
+  .vaktija-logo img {
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  .vaktija-brand {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 3mm !important;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8)) !important;
+    z-index: 10;
+  }
+
+  .vaktija-brand h2 {
+    font-size: 14pt !important;
+    margin-bottom: 0 !important;
+    color: white !important;
+  }
+
+  .vaktija-brand div {
+    font-size: 8pt !important;
+    color: #fbbf24 !important;
+  }
+
+  /* Table Wrapper - Grows to fill space */
+  .vaktija-table-wrapper {
+    flex-grow: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: start !important;
+    /* Align to top to avoid huge gaps if table is short */
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border: 2px solid #064e3b !important;
+    table-layout: fixed !important;
+  }
+
+  th {
+    background: #064e3b !important;
+    color: white !important;
+    font-size: 7pt !important;
+    padding: 1mm !important;
+    text-transform: uppercase;
+    font-weight: 800 !important;
+    border: 1px solid #064e3b !important;
+  }
+
+  td {
+    padding: 0.5mm !important;
+    border: 1px solid #cbd5e1 !important;
+    font-size: 8pt !important;
+    text-align: center !important;
+    color: black !important;
+    height: auto !important;
+  }
+
+  /* Fix for the day circle - make it text only in print to save space */
+  .vaktija-table-wrapper span {
+    background: none !important;
+    color: black !important;
+    width: auto !important;
+    height: auto !important;
+    font-weight: bold !important;
+    font-size: 9pt !important;
+  }
+
+  tr:nth-child(even) {
+    background-color: #f1f5f9 !important;
+  }
+
+  td:nth-child(8) {
+    font-weight: 900 !important;
+    background-color: #fef3c7 !important;
+    /* Lighter amber for print */
+    border-left: 2px solid #000 !important;
+    border-right: 2px solid #000 !important;
+  }
+
+  /* Footer - Compact and Single Line */
+  footer {
+    border-top: 1px solid #064e3b !important;
+    padding-top: 1mm !important;
+    /* Minimal padding */
+    padding-bottom: 1mm !important;
+    margin-top: auto !important;
+    display: flex !important;
+    flex-direction: row !important;
+    /* Ensure row layout */
+    justify-content: space-between !important;
+    align-items: center !important;
+    flex-shrink: 0;
+    margin-left: 5mm !important;
+    margin-right: 5mm !important;
+    margin-bottom: 2mm !important;
+  }
+
+  /* Only target direct divs if they exist, but App.tsx will control content */
+  footer div {
+    font-size: 7pt !important;
+    line-height: 1 !important;
+  }
+}
